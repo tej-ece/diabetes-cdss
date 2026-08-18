@@ -1,0 +1,12 @@
+From now on, whenever you work on this project:
+
+Open the diabetes-cdss folder in VS Code.
+Open a terminal.
+Activate the virtual environment:
+.\venv\Scripts\Activate.ps1
+
+When you see:
+
+(venv)
+
+you're ready to work.
