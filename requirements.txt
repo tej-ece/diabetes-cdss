@@ -3,6 +3,6 @@ pandas
 numpy
 matplotlib
 xgboost
-scikit-learn==1.6.1
+scikit-learn
 joblib
 shap
