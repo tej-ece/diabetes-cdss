@@ -1,426 +1,784 @@
-import os
-import joblib
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import shap
+
 import streamlit as st
+import pandas as pd
+import joblib
+import shap
+import matplotlib.pyplot as plt
 
-# ---------------------------------------------------------
+
+# ============================================================
 # PAGE CONFIGURATION
-# ---------------------------------------------------------
+# ============================================================
+
 st.set_page_config(
-    page_title="AI-Based Two-Stage Diabetes Risk CDSS",
+    page_title="Diabetes CDSS",
     page_icon="🩺",
-    layout="wide",
+    layout="wide"
 )
 
-# ---------------------------------------------------------
-# LOAD TRAINED MODELS & ARTIFACTS
-# ---------------------------------------------------------
+
+# ============================================================
+# MODEL PATHS
+# ============================================================
+
+STAGE1_MODEL_PATH = "diabetes_screening_xgb_pipeline.pkl"
+STAGE1_FEATURES_PATH = "screening_features.pkl"
+
+STAGE2_MODEL_PATH = "models/stage2_random_forest.pkl"
+STAGE2_FEATURES_PATH = "models/stage2_lab_features.pkl"
+
+
+# ============================================================
+# LOAD MODELS
+# ============================================================
+
 @st.cache_resource
-def load_all_models():
-    # Load Stage 1: Non-Lab Screening Model
-    xgb_model, screening_features = None, None
-    if os.path.exists("diabetes_screening_xgb_pipeline.pkl") and os.path.exists(
-        "screening_features.pkl"
-    ):
-        xgb_model = joblib.load("diabetes_screening_xgb_pipeline.pkl")
-        screening_features = joblib.load("screening_features.pkl")
+def load_models():
 
-    # Load Stage 2: Diagnostic Model
-    rf_model, lab_features = None, None
-    rf_model_path = os.path.join("models", "diabetes_model.pkl")
-    rf_feat_path = os.path.join("models", "model_features.pkl")
+    stage1_model = joblib.load(STAGE1_MODEL_PATH)
+    stage1_features = joblib.load(STAGE1_FEATURES_PATH)
 
-    if os.path.exists(rf_model_path) and os.path.exists(rf_feat_path):
-        rf_model = joblib.load(rf_model_path)
-        lab_features = joblib.load(rf_feat_path)
+    stage2_model = joblib.load(STAGE2_MODEL_PATH)
+    stage2_features = joblib.load(STAGE2_FEATURES_PATH)
 
-    return xgb_model, screening_features, rf_model, lab_features
+    return (
+        stage1_model,
+        stage1_features,
+        stage2_model,
+        stage2_features
+    )
 
 
-xgb_model, screening_features, rf_model, lab_features = load_all_models()
+try:
 
-# ---------------------------------------------------------
-# HEADER & NAVIGATION TABS
-# ---------------------------------------------------------
-st.title("🩺 Two-Stage Explainable AI Diabetes Risk CDSS")
+    (
+        stage1_model,
+        stage1_features,
+        stage2_model,
+        stage2_features
+    ) = load_models()
 
-tab1, tab2 = st.tabs(
+except Exception as e:
+
+    st.error(f"Model loading error: {e}")
+    st.stop()
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+st.title(
+    "🩺 Explainable AI-Based Clinical Decision Support System"
+)
+
+st.markdown(
+    """
+    ### Diabetes Screening and Personalized Management
+
+    Select the assessment pathway according to the information
+    available.
+    """
+)
+
+st.divider()
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+with st.sidebar:
+
+    st.header("System Information")
+
+    st.markdown(
+        """
+        **Non-Laboratory Assessment**
+
+        XGBoost-based assessment using anthropometric,
+        blood-pressure, family-history and lifestyle indicators.
+
+        **Laboratory Assessment**
+
+        Random Forest-based assessment using six laboratory
+        biomarkers.
+
+        **Explainability**
+
+        SHAP-based feature contribution analysis.
+        """
+    )
+
+    st.divider()
+
+    st.caption(
+        "Academic research prototype — not clinically validated."
+    )
+
+
+# ============================================================
+# ASSESSMENT SELECTION
+# ============================================================
+
+assessment_mode = st.radio(
+    "Choose the assessment pathway based on the information available:",
     [
-        "📋 STAGE 1: Non-Lab Community Screening",
-        "🔬 STAGE 2: Laboratory Clinical Diagnostics",
-    ]
+        "🩺 Non-Laboratory-Based Assessment",
+        "🧪 Laboratory-Based Assessment"
+    ],
+    horizontal=True
 )
 
 
-# =========================================================
-# TAB 1: STAGE 1 - NON-LAB COMMUNITY SCREENING
-# =========================================================
-with tab1:
-    st.markdown("### Explainable Clinical Decision Support Prototype")
-    st.write(
-        "This research prototype uses machine learning to estimate diabetes screening risk "
-        "from non-laboratory health and lifestyle indicators."
+# ============================================================
+# NON-LABORATORY ASSESSMENT
+# ============================================================
+
+if assessment_mode == "🩺 Non-Laboratory-Based Assessment":
+
+    st.header("🩺 Non-Laboratory-Based Assessment")
+
+    st.info(
+        "Assessment using non-laboratory anthropometric, "
+        "blood-pressure, family-history and lifestyle parameters."
     )
-    st.info("Research Prototype | Model: XGBoost | Explainability: SHAP")
 
-    if xgb_model is None or screening_features is None:
-        st.error(
-            "⚠️ **Missing Artifacts:** Stage 1 model files (`diabetes_screening_xgb_pipeline.pkl`) "
-            "were not found in the project root folder."
+    # --------------------------------------------------------
+    # NUMERICAL PARAMETERS
+    # --------------------------------------------------------
+
+    st.subheader("Anthropometric and Blood Pressure Parameters")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        bmi = st.number_input(
+            "BMI",
+            min_value=10.0,
+            max_value=60.0,
+            value=25.0,
+            step=0.001
         )
-    else:
-        st.header("Patient Information")
 
-        col1, col2, col3 = st.columns(3)
+        waist = st.number_input(
+            "Waist Circumference (cm)",
+            min_value=20.0,
+            max_value=150.0,
+            value=80.0,
+            step=0.001
+        )
+
+    with col2:
+
+        systolic_bp = st.number_input(
+            "Systolic Blood Pressure (mmHg)",
+            min_value=70.0,
+            max_value=220.0,
+            value=120.0,
+            step=0.001
+        )
+
+        diastolic_bp = st.number_input(
+            "Diastolic Blood Pressure (mmHg)",
+            min_value=40.0,
+            max_value=140.0,
+            value=80.0,
+            step=0.001
+        )
+
+    # --------------------------------------------------------
+    # CATEGORICAL PARAMETERS
+    # --------------------------------------------------------
+
+    st.subheader("Family History and Lifestyle Parameters")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        family_history = st.selectbox(
+            "Family History of Diabetes",
+            ["No", "Yes"]
+        )
+
+    with col2:
+
+        hypertension = st.selectbox(
+            "Hypertension",
+            ["No", "Yes"]
+        )
+
+    with col3:
+
+        physical_activity = st.selectbox(
+            "Physical Activity",
+            ["No", "Yes"]
+        )
+
+    with col4:
+
+        smoking = st.selectbox(
+            "Smoking",
+            ["No", "Yes"]
+        )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+
+        alcohol_consumption = st.selectbox(
+            "Alcohol Consumption",
+            ["No", "Yes"]
+        )
+
+    with col2:
+
+        obesity = st.selectbox(
+            "Obesity",
+            ["No", "Yes"]
+        )
+
+    with col3:
+
+        pcos = st.selectbox(
+            "PCOS",
+            ["No", "Yes"]
+        )
+
+    with col4:
+
+        gestational_diabetes = st.selectbox(
+            "Gestational Diabetes",
+            ["No", "Yes"]
+        )
+
+    st.divider()
+
+    # --------------------------------------------------------
+    # PREDICTION BUTTON
+    # --------------------------------------------------------
+
+    if st.button(
+        "🔍 Perform Non-Laboratory Assessment",
+        type="primary",
+        use_container_width=True
+    ):
+
+        # IMPORTANT:
+        # Pass Yes/No strings directly because the saved
+        # pipeline contains the OneHotEncoder.
+
+        input_data = {
+            "BMI": bmi,
+            "Waist_Circumference": waist,
+            "Blood_Pressure_Systolic": systolic_bp,
+            "Blood_Pressure_Diastolic": diastolic_bp,
+            "Family_History_of_Diabetes": family_history,
+            "Hypertension": hypertension,
+            "Physical_Activity": physical_activity,
+            "Smoking": smoking,
+            "Alcohol_Consumption": alcohol_consumption,
+            "Obesity": obesity,
+            "PCOS": pcos,
+            "Gestational_Diabetes": gestational_diabetes
+        }
+
+        input_df = pd.DataFrame([input_data])
+
+        # Exact training order
+        input_df = input_df[stage1_features]
+
+        # ----------------------------------------------------
+        # PREDICTION
+        # ----------------------------------------------------
+
+        try:
+
+            probability = stage1_model.predict_proba(
+                input_df
+            )[0, 1]
+
+        except Exception as e:
+
+            st.error(
+                f"Non-laboratory prediction error: {e}"
+            )
+            st.stop()
+
+        probability_percent = probability * 100
+
+        # ----------------------------------------------------
+        # RISK CLASSIFICATION
+        # ----------------------------------------------------
+
+        if probability < 0.30:
+
+            risk_category = "Low Risk"
+            risk_message = "Lower Risk Signal"
+
+        elif probability < 0.85:
+
+            risk_category = "Moderate Risk"
+            risk_message = "Moderate Risk Signal"
+
+        else:
+
+            risk_category = "High Risk"
+            risk_message = "Positive Risk Signal"
+
+        # ----------------------------------------------------
+        # RESULT
+        # ----------------------------------------------------
+
+        st.subheader("Assessment Result")
+
+        col1, col2 = st.columns(2)
 
         with col1:
-            bmi = st.number_input(
-                "BMI",
-                min_value=10.0,
-                max_value=60.0,
-                value=25.0,
-                step=0.1,
-                key="s1_bmi",
-            )
-            waist = st.number_input(
-                "Waist Circumference (cm)",
-                min_value=40.0,
-                max_value=180.0,
-                value=85.0,
-                step=1.0,
-                key="s1_waist",
-            )
-            systolic = st.number_input(
-                "Systolic Blood Pressure (mmHg)",
-                min_value=70.0,
-                max_value=250.0,
-                value=120.0,
-                step=1.0,
-                key="s1_sys",
-            )
-            diastolic = st.number_input(
-                "Diastolic Blood Pressure (mmHg)",
-                min_value=40.0,
-                max_value=150.0,
-                value=80.0,
-                step=1.0,
-                key="s1_dia",
+
+            st.metric(
+                "Estimated Probability",
+                f"{probability_percent:.2f}%"
             )
 
         with col2:
-            family_history = st.selectbox(
-                "Family History of Diabetes", ["No", "Yes"], key="s1_fam"
-            )
-            hypertension = st.selectbox(
-                "Hypertension", ["No", "Yes"], key="s1_hyp"
-            )
-            physical_activity = st.selectbox(
-                "Physical Activity", ["Low", "Moderate", "High"], key="s1_act"
-            )
-            smoking = st.selectbox("Smoking", ["No", "Yes"], key="s1_smoke")
 
-        with col3:
-            alcohol = st.selectbox(
-                "Alcohol Consumption", ["No", "Yes"], key="s1_alc"
-            )
-            obesity = st.selectbox("Obesity", ["No", "Yes"], key="s1_obs")
-            pcos = st.selectbox("PCOS", ["No", "Yes"], key="s1_pcos")
-            gestational_diabetes = st.selectbox(
-                "Gestational Diabetes", ["No", "Yes"], key="s1_gest"
+            st.metric(
+                "Risk Category",
+                risk_category
             )
 
-        st.divider()
+        if risk_category == "Low Risk":
 
-        predict_button = st.button(
-            "🔍 Predict Diabetes Risk",
-            type="primary",
-            use_container_width=True,
-            key="s1_btn",
+            st.success(
+                f"🟢 {risk_category} — {risk_message}"
+            )
+
+        elif risk_category == "Moderate Risk":
+
+            st.warning(
+                f"🟡 {risk_category} — {risk_message}"
+            )
+
+        else:
+
+            st.error(
+                f"🔴 {risk_category} — {risk_message}"
+            )
+
+        # ----------------------------------------------------
+        # INPUT SUMMARY
+        # ----------------------------------------------------
+
+        st.subheader("Input Summary")
+
+        st.dataframe(
+            input_df,
+            use_container_width=True
         )
 
-        if predict_button:
-            input_data = pd.DataFrame(
-                [
-                    {
-                        "BMI": bmi,
-                        "Waist_Circumference": waist,
-                        "Blood_Pressure_Systolic": systolic,
-                        "Blood_Pressure_Diastolic": diastolic,
-                        "Family_History_of_Diabetes": family_history,
-                        "Hypertension": hypertension,
-                        "Physical_Activity": physical_activity,
-                        "Smoking": smoking,
-                        "Alcohol_Consumption": alcohol,
-                        "Obesity": obesity,
-                        "PCOS": pcos,
-                        "Gestational_Diabetes": gestational_diabetes,
-                    }
+        # ----------------------------------------------------
+        # SHAP
+        # ----------------------------------------------------
+
+        st.subheader("Explainable AI Analysis")
+
+        try:
+
+            # The Stage-1 model is a preprocessing pipeline.
+            # Use the transformed data and final estimator.
+
+            if hasattr(stage1_model, "named_steps"):
+
+                final_estimator = stage1_model.steps[-1][1]
+
+                preprocessing_pipeline = stage1_model[
+                    :-1
                 ]
+
+                transformed_input = (
+                    preprocessing_pipeline.transform(input_df)
+                )
+
+                explainer = shap.TreeExplainer(
+                    final_estimator,
+                    feature_perturbation="tree_path_dependent"
+                )
+
+                shap_result = explainer(
+                    transformed_input
+                )
+
+                shap_values = shap_result.values
+
+                # Handle binary classification output
+                if len(shap_values.shape) == 3:
+
+                    shap_values = shap_values[0, :, 1]
+
+                else:
+
+                    shap_values = shap_values[0]
+
+                # Get transformed feature names
+                try:
+
+                    transformed_names = (
+                        preprocessing_pipeline
+                        .get_feature_names_out()
+                    )
+
+                except Exception:
+
+                    transformed_names = [
+                        f"Feature {i + 1}"
+                        for i in range(len(shap_values))
+                    ]
+
+            else:
+
+                explainer = shap.TreeExplainer(
+                    stage1_model,
+                    feature_perturbation="tree_path_dependent"
+                )
+
+                shap_result = explainer(input_df)
+
+                shap_values = shap_result.values[0]
+
+                transformed_names = stage1_features
+
+
+            shap_df = pd.DataFrame({
+                "Feature": transformed_names,
+                "SHAP Contribution": shap_values
+            })
+
+            shap_df["Absolute Contribution"] = (
+                shap_df["SHAP Contribution"].abs()
             )
 
-            # Ensure exact feature order
-            input_data = input_data[screening_features]
-
-            # Prediction
-            prediction = xgb_model.predict(input_data)[0]
-            probability = xgb_model.predict_proba(input_data)[0][1]
-
-            # Result Section
-            st.header("Prediction Result")
-            result_col1, result_col2 = st.columns(2)
-
-            with result_col1:
-                if prediction == 1:
-                    st.error("⚠️ Screening Result: Positive")
-                else:
-                    st.success("✅ Screening Result: Negative")
-
-            with result_col2:
-                st.metric(
-                    "Model-Estimated Probability", f"{probability * 100:.2f}%"
-                )
-
-            # Risk Stratification
-            if probability < 0.30:
-                risk_level = "Low"
-            elif probability < 0.85:
-                risk_level = "Moderate"
-            else:
-                risk_level = "High"
-
-            st.subheader("Risk Stratification")
-
-            if risk_level == "Low":
-                st.success("🟢 Low model-estimated screening risk")
-            elif risk_level == "Moderate":
-                st.warning("🟡 Moderate model-estimated screening risk")
-            else:
-                st.error("🔴 High model-estimated screening risk")
-
-            # Suggested Next Step
-            st.subheader("Suggested Next Step")
-            if prediction == 1 or risk_level in ["Moderate", "High"]:
-                st.write(
-                    "The screening model indicates an elevated likelihood of diabetes. "
-                    "**Further clinical evaluation and Stage 2 laboratory testing (HbA1c & Fasting Glucose)** "
-                    "should be conducted."
-                )
-            else:
-                st.write(
-                    "The screening model does not indicate elevated diabetes risk based on the entered "
-                    "screening features. Routine health monitoring and healthy lifestyle practices are recommended."
-                )
-
-            # SHAP Explanation
-            st.divider()
-            st.header("🔎 Why did the model make this prediction?")
-            st.write(
-                "SHAP (SHapley Additive exPlanations) is used to examine how individual input features "
-                "contributed to the model's prediction."
+            shap_df = shap_df.sort_values(
+                "Absolute Contribution",
+                ascending=False
             )
 
-            try:
-                preprocessor = xgb_model.named_steps["preprocessor"]
-                estimator = xgb_model.named_steps["model"]
+            st.dataframe(
+                shap_df[
+                    [
+                        "Feature",
+                        "SHAP Contribution"
+                    ]
+                ],
+                use_container_width=True
+            )
 
-                transformed_input = preprocessor.transform(input_data)
-                if hasattr(transformed_input, "toarray"):
-                    transformed_input = transformed_input.toarray()
+            fig, ax = plt.subplots(figsize=(9, 5))
 
-                feature_names = preprocessor.get_feature_names_out()
-                input_shap = pd.DataFrame(
-                    transformed_input, columns=feature_names
-                )
+            plot_df = shap_df.sort_values(
+                "SHAP Contribution"
+            )
 
-                explainer = shap.TreeExplainer(estimator)
-                shap_values = explainer.shap_values(input_shap)
+            ax.barh(
+                plot_df["Feature"],
+                plot_df["SHAP Contribution"]
+            )
 
-                if isinstance(shap_values, list):
-                    shap_values_plot = shap_values[1]
-                else:
-                    shap_values_plot = shap_values
-                    if len(np.shape(shap_values_plot)) == 3:
-                        shap_values_plot = shap_values_plot[:, :, 1]
+            ax.set_xlabel("SHAP Contribution")
 
-                fig, ax = plt.subplots(figsize=(10, 5))
-                shap.summary_plot(
-                    shap_values_plot,
-                    input_shap,
-                    plot_type="bar",
-                    show=False,
-                )
-                plt.tight_layout()
-                st.pyplot(fig)
+            ax.set_title(
+                "Feature Contributions to the Prediction"
+            )
 
-                st.caption(
-                    "Higher absolute SHAP values indicate a stronger contribution to the model prediction. "
-                    "SHAP values describe model behavior and should not be interpreted as causal medical effects."
-                )
-            except Exception as e:
-                st.warning(
-                    "SHAP explanation could not be generated for this prediction."
-                )
+            plt.tight_layout()
+
+            st.pyplot(fig)
+
+            plt.close(fig)
+
+        except Exception as e:
+
+            st.warning(
+                f"SHAP explanation could not be generated: {e}"
+            )
 
 
-# =========================================================
-# TAB 2: STAGE 2 - CLINICAL DIAGNOSTIC CDSS (LAB)
-# =========================================================
-with tab2:
-    st.markdown("### 🔬 Stage 2: Diagnostic Clinical Decision Support System")
-    st.write(
-        "Incorporate laboratory biomarkers (HbA1c, Fasting Glucose, Postprandial Glucose) "
-        "for high-precision clinical evaluation (**Random Forest - 97.90% Recall**)."
+# ============================================================
+# LABORATORY ASSESSMENT
+# ============================================================
+
+else:
+
+    st.header("🧪 Laboratory-Based Assessment")
+
+    st.info(
+        "Assessment using six laboratory biomarkers."
     )
 
-    if rf_model is None or lab_features is None:
-        st.error(
-            "⚠️ **Missing Artifacts:** Diagnostic model files (`models/diabetes_model.pkl`) "
-            "were not detected."
+    st.subheader("Laboratory Parameters")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        hba1c = st.number_input(
+            "HbA1c (%)",
+            min_value=0.0,
+            max_value=20.0,
+            value=5.5,
+            step=0.001
         )
-    else:
-        st.sidebar.markdown("### 🔬 Stage 2 Lab Parameters")
-        hba1c = st.sidebar.number_input(
-            "HbA1c Level (%)", 4.0, 15.0, 6.5, 0.1, key="s2_hba1c"
-        )
-        fbg = st.sidebar.number_input(
+
+        fasting_glucose = st.number_input(
             "Fasting Blood Glucose (mg/dL)",
-            50.0,
-            300.0,
-            110.0,
-            key="s2_fbg",
+            min_value=40.0,
+            max_value=400.0,
+            value=100.0,
+            step=0.001
         )
-        pbg = st.sidebar.number_input(
+
+        postprandial_glucose = st.number_input(
             "Postprandial Blood Glucose (mg/dL)",
-            70.0,
-            400.0,
-            140.0,
-            key="s2_pbg",
-        )
-        bmi_lab = st.sidebar.number_input(
-            "BMI (kg/m²)", 10.0, 60.0, 26.5, 0.5, key="s2_bmi"
-        )
-        sys_bp_lab = st.sidebar.number_input(
-            "Systolic BP (mmHg)", 80, 220, 120, key="s2_sys"
+            min_value=40.0,
+            max_value=500.0,
+            value=140.0,
+            step=0.001
         )
 
-        fam_hist_lab = st.sidebar.selectbox(
-            "Family History of Diabetes",
-            ["No", "Yes"],
-            index=1,
-            key="s2_fam",
-        )
-        hypertension_lab = st.sidebar.selectbox(
-            "Hypertension", ["No", "Yes"], index=0, key="s2_hyp"
-        )
-        physical_act_lab = st.sidebar.selectbox(
-            "Physical Activity", ["Yes", "No"], index=0, key="s2_act"
+    with col2:
+
+        insulin = st.number_input(
+            "Insulin Levels",
+            min_value=0.0,
+            max_value=100.0,
+            value=10.0,
+            step=0.001
         )
 
-        input_dict = {feat: 0 for feat in lab_features}
-        if "HbA1c" in input_dict:
-            input_dict["HbA1c"] = hba1c
-        if "Fasting_Blood_Glucose" in input_dict:
-            input_dict["Fasting_Blood_Glucose"] = fbg
-        if "Postprandial_Blood_Glucose" in input_dict:
-            input_dict["Postprandial_Blood_Glucose"] = pbg
-        if "BMI" in input_dict:
-            input_dict["BMI"] = bmi_lab
-        if "Blood_Pressure_Systolic" in input_dict:
-            input_dict["Blood_Pressure_Systolic"] = sys_bp_lab
-        if "Family_History_of_Diabetes_Yes" in input_dict:
-            input_dict["Family_History_of_Diabetes_Yes"] = (
-                1 if fam_hist_lab == "Yes" else 0
+        homa_ir = st.number_input(
+            "HOMA-IR",
+            min_value=0.0,
+            max_value=20.0,
+            value=1.5,
+            step=0.001
+        )
+
+        c_peptide = st.number_input(
+            "C-Peptide",
+            min_value=0.0,
+            max_value=15.0,
+            value=2.0,
+            step=0.001
+        )
+
+    st.caption(
+        "Laboratory values are entered manually in this "
+        "academic prototype."
+    )
+
+    st.divider()
+
+    if st.button(
+        "🧪 Perform Laboratory Assessment",
+        type="primary",
+        use_container_width=True
+    ):
+
+        # ----------------------------------------------------
+        # CREATE INPUT
+        # ----------------------------------------------------
+
+        lab_data = {
+            "HbA1c": hba1c,
+            "Fasting_Blood_Glucose": fasting_glucose,
+            "Postprandial_Blood_Glucose": postprandial_glucose,
+            "Insulin_Levels": insulin,
+            "HOMA_IR": homa_ir,
+            "C_Peptide": c_peptide
+        }
+
+        lab_df = pd.DataFrame([lab_data])
+
+        # Exact training order
+        lab_df = lab_df[stage2_features]
+
+        # ----------------------------------------------------
+        # PREDICTION
+        # ----------------------------------------------------
+
+        try:
+
+            probability = stage2_model.predict_proba(
+                lab_df
+            )[0, 1]
+
+        except Exception as e:
+
+            st.error(
+                f"Laboratory prediction error: {e}"
             )
-        if "Hypertension_Yes" in input_dict:
-            input_dict["Hypertension_Yes"] = (
-                1 if hypertension_lab == "Yes" else 0
+            st.stop()
+
+        probability_percent = probability * 100
+
+        # ----------------------------------------------------
+        # RISK CATEGORY
+        # ----------------------------------------------------
+
+        if probability < 0.30:
+
+            risk_category = "Lower Risk"
+            risk_message = "Lower Risk Signal"
+
+        elif probability < 0.70:
+
+            risk_category = "Intermediate Risk"
+            risk_message = "Intermediate Risk Signal"
+
+        else:
+
+            risk_category = "Higher Risk"
+            risk_message = "Higher Risk Signal"
+
+        # ----------------------------------------------------
+        # RESULT
+        # ----------------------------------------------------
+
+        st.subheader("Laboratory Assessment Result")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            st.metric(
+                "Estimated Probability",
+                f"{probability_percent:.2f}%"
             )
-        if "Physical_Activity_Yes" in input_dict:
-            input_dict["Physical_Activity_Yes"] = (
-                1 if physical_act_lab == "Yes" else 0
+
+        with col2:
+
+            st.metric(
+                "Risk Category",
+                risk_category
             )
 
-        input_df = pd.DataFrame([input_dict])
+        if risk_category == "Lower Risk":
 
-        st.subheader("Active Patient Biomarkers")
-        p_col1, p_col2, p_col3, p_col4 = st.columns(4)
-        p_col1.metric("HbA1c", f"{hba1c}%")
-        p_col2.metric("Fasting Glucose", f"{fbg} mg/dL")
-        p_col3.metric("Postprandial Glucose", f"{pbg} mg/dL")
-        p_col4.metric("BMI", f"{bmi_lab} kg/m²")
+            st.success(
+                f"🟢 {risk_category} — {risk_message}"
+            )
 
-        st.divider()
+        elif risk_category == "Intermediate Risk":
 
-        if st.button(
-            "🔍 Run Stage 2 Diagnostic Evaluation",
-            type="primary",
-            use_container_width=True,
-            key="s2_btn",
-        ):
-            probability_lab = rf_model.predict_proba(input_df)[0][1]
-            prediction_lab = rf_model.predict(input_df)[0]
+            st.warning(
+                f"🟡 {risk_category} — {risk_message}"
+            )
 
-            st.header("Diagnostic Verdict")
-            d_col1, d_col2, d_col3 = st.columns(3)
+        else:
 
-            with d_col1:
-                if prediction_lab == 1 or probability_lab > 0.45:
-                    st.error("🚨 Diagnostic Result: HIGH RISK / POSITIVE")
-                else:
-                    st.success("✅ Diagnostic Result: LOW RISK / NORMAL")
+            st.error(
+                f"🔴 {risk_category} — {risk_message}"
+            )
 
-            with d_col2:
-                st.metric(
-                    "Diabetic Probability", f"{probability_lab * 100:.2f}%"
-                )
+        # ----------------------------------------------------
+        # INPUT SUMMARY
+        # ----------------------------------------------------
 
-            with d_col3:
-                st.metric("Model Recall (Clinical Safety)", "97.90%")
+        st.subheader("Laboratory Input Summary")
 
-            # SHAP Waterfall Plot for Tab 2
-            st.divider()
-            st.header("🔎 Patient-Specific Diagnostic Breakdown")
+        st.dataframe(
+            lab_df,
+            use_container_width=True
+        )
 
-            explainer_lab = shap.TreeExplainer(rf_model)
-            shap_vals_lab = explainer_lab.shap_values(input_df)
+        # ----------------------------------------------------
+        # SHAP
+        # ----------------------------------------------------
 
-            if isinstance(shap_vals_lab, list):
-                vals = shap_vals_lab[1][0]
-                base_val = explainer_lab.expected_value[1]
+        st.subheader("Explainable AI Analysis")
+
+        try:
+
+            explainer = shap.TreeExplainer(
+                stage2_model
+            )
+
+            shap_result = explainer(lab_df)
+
+            shap_values = shap_result.values
+
+            if len(shap_values.shape) == 3:
+
+                shap_values = shap_values[0, :, 1]
+
             else:
-                vals = (
-                    shap_vals_lab[0, :, 1]
-                    if len(shap_vals_lab.shape) == 3
-                    else shap_vals_lab[0]
-                )
-                base_val = (
-                    explainer_lab.expected_value[1]
-                    if isinstance(
-                        explainer_lab.expected_value, (list, np.ndarray)
-                    )
-                    else explainer_lab.expected_value
-                )
 
-            fig_waterfall, ax = plt.subplots(figsize=(8, 4))
-            shap.plots.waterfall(
-                shap.Explanation(
-                    values=vals,
-                    base_values=base_val,
-                    data=input_df.iloc[0],
-                    feature_names=lab_features,
-                ),
-                show=False,
+                shap_values = shap_values[0]
+
+            shap_df = pd.DataFrame({
+                "Feature": stage2_features,
+                "SHAP Contribution": shap_values
+            })
+
+            shap_df["Absolute Contribution"] = (
+                shap_df["SHAP Contribution"].abs()
             )
-            st.pyplot(fig_waterfall)
 
-# ---------------------------------------------------------
-# GLOBAL DISCLAIMER
-# ---------------------------------------------------------
+            shap_df = shap_df.sort_values(
+                "Absolute Contribution",
+                ascending=False
+            )
+
+            st.dataframe(
+                shap_df[
+                    [
+                        "Feature",
+                        "SHAP Contribution"
+                    ]
+                ],
+                use_container_width=True
+            )
+
+            fig, ax = plt.subplots(figsize=(9, 5))
+
+            plot_df = shap_df.sort_values(
+                "SHAP Contribution"
+            )
+
+            ax.barh(
+                plot_df["Feature"],
+                plot_df["SHAP Contribution"]
+            )
+
+            ax.set_xlabel("SHAP Contribution")
+
+            ax.set_title(
+                "Laboratory Feature Contributions"
+            )
+
+            plt.tight_layout()
+
+            st.pyplot(fig)
+
+            plt.close(fig)
+
+        except Exception as e:
+
+            st.warning(
+                f"SHAP explanation could not be generated: {e}"
+            )
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
 st.divider()
+
 st.caption(
-    "⚠️ This application is a research prototype and is not a substitute for professional medical diagnosis. "
-    "Model outputs should not be used as the sole basis for medical decisions."
+    "Explainable AI-Based Clinical Decision Support System "
+    "for Diabetes Screening and Personalized Management | "
+    "Academic Research Prototype — Not Clinically Validated"
 )
